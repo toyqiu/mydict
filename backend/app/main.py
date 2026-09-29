@@ -30,6 +30,7 @@ from app.core.exceptions import AppError, RateLimitedError
 from app.core.logging import configure_logging
 from app.core.maintenance import MaintenanceGate
 from app.core.version import get_app_version
+from app.services import spx_transcode
 from app.services.resource_service import (
     normalize_resource_path,
     resolve_resource_file,
@@ -88,6 +89,8 @@ app.include_router(web_public_settings_router, prefix="/api")
 # 这个头对图片/CSS/字体等子资源没有作用，不影响词条渲染。
 _DICT_RES_HEADERS = {
     "Access-Control-Allow-Origin": "*",
+    # 嵌入方页面开了 COEP: require-corp 时（MyReader），跨域子资源必须显式放行
+    "Cross-Origin-Resource-Policy": "cross-origin",
     "Cache-Control": "public, max-age=86400",
     "Content-Security-Policy": "sandbox allow-scripts",
     "X-Content-Type-Options": "nosniff",
@@ -115,6 +118,10 @@ def dict_resource(dictionary_id: int, resource_path: str) -> FileResponse:
     normalized = strip_legacy_file_prefix(normalized)
     res_dir = Path(settings.dictionary_storage_path) / str(dictionary_id) / "res"
     target = resolve_resource_file(res_dir, normalized)
+    if target is None and normalized.lower().endswith(".mp3"):
+        source = resolve_resource_file(res_dir, normalized[:-4] + ".spx")
+        if source is not None:
+            target = spx_transcode.transcode_to_mp3(source)
     if target is None:
         raise HTTPException(status_code=404)
     return FileResponse(
