@@ -159,58 +159,68 @@ async function remove(item: VocabItem) {
 
       <div v-else class="vocab-list">
         <div v-for="item in items" :key="item.id" class="vocab-item">
-          <div class="vocab-main">
-            <div
-              class="word-row"
-              :class="{ clickable: hasBody(item) }"
-              role="button"
-              :tabindex="hasBody(item) ? 0 : -1"
-              :aria-expanded="hasBody(item) ? isExpanded(item.id) : undefined"
-              @click="toggle(item)"
-              @keydown.enter.prevent="toggle(item)"
-              @keydown.space.prevent="toggle(item)"
+          <!--
+            「删除」放在标题行里面，而不是当卡片的兄弟节点：兄弟节点会长成一列贯穿整张
+            卡片的高度，词条展开后右边就永远空掉一条（38px 按钮 + 16px 间距），正文被
+            挤窄。放进标题行后展开的正文才能占满整宽。点击要 stop——标题行本身是折叠
+            开关，不拦住会把卡片一起折掉；键盘同理，否则聚焦按钮敲回车会触发两次。
+          -->
+          <div
+            class="word-row"
+            :class="{ clickable: hasBody(item) }"
+            role="button"
+            :tabindex="hasBody(item) ? 0 : -1"
+            :aria-expanded="hasBody(item) ? isExpanded(item.id) : undefined"
+            @click="toggle(item)"
+            @keydown.enter.prevent="toggle(item)"
+            @keydown.space.prevent="toggle(item)"
+          >
+            <span
+              v-if="hasBody(item)"
+              class="chevron"
+              :class="{ open: isExpanded(item.id) }"
+              aria-hidden="true"
+              >›</span
             >
-              <span
-                v-if="hasBody(item)"
-                class="chevron"
-                :class="{ open: isExpanded(item.id) }"
-                aria-hidden="true"
-                >›</span
-              >
-              <span class="word">{{ item.word }}</span>
-              <span v-if="item.phonetic" class="phonetic">[{{ item.phonetic }}]</span>
-              <!-- 词条级生词本：同一个词可能来自不同词典，标出来源 -->
-              <span v-if="item.dictionary_name" class="dict-name">{{ item.dictionary_name }}</span>
-            </div>
-            <!--
-              折叠不用 display:none：隐藏的 iframe 会按 0 宽度排版、上报一个极大的高度，把
-              EntryFrame 的增长守卫误触发成「冻结可滚动」。收成高度 0 后 iframe 仍按真实宽度
-              排版，inert 挡住键盘焦点落进看不见的内容。默认折叠，展开过才挂载。
-            -->
-            <div
-              v-if="hasBody(item) && (isExpanded(item.id) || isMounted(item.id))"
-              class="vocab-body"
-              :class="{ collapsed: !isExpanded(item.id) }"
-              :inert="!isExpanded(item.id)"
+            <span class="word">{{ item.word }}</span>
+            <span v-if="item.phonetic" class="phonetic">[{{ item.phonetic }}]</span>
+            <!-- 词条级生词本：同一个词可能来自不同词典，标出来源 -->
+            <span v-if="item.dictionary_name" class="dict-name">{{ item.dictionary_name }}</span>
+            <button
+              type="button"
+              class="remove-btn"
+              aria-label="删除生词"
+              @click.stop="remove(item)"
+              @keydown.stop
             >
-              <!--
-                释义用隔离 iframe 渲染：词典自带的 <style>/内联事件在应用源下会污染整个
-                界面、并让第三方词典脚本够到 localStorage 里的 token。
-                这里取的是**收藏当时的释义快照**（/vocab/{id}/entry），不是按词典实时取，
-                所以词典后来被删或改都不影响生词本。
-              -->
-              <EntryFrame
-                v-if="item.definition"
-                :key="item.id"
-                class="definition"
-                :loader="() => getVocabEntryHtml(item.id)"
-              />
-              <p v-if="item.note" class="note">备注：{{ item.note }}</p>
-            </div>
+              删除
+            </button>
           </div>
-          <button type="button" class="remove-btn" aria-label="删除生词" @click="remove(item)">
-            删除
-          </button>
+          <!--
+            折叠不用 display:none：隐藏的 iframe 会按 0 宽度排版、上报一个极大的高度，把
+            EntryFrame 的增长守卫误触发成「冻结可滚动」。收成高度 0 后 iframe 仍按真实宽度
+            排版，inert 挡住键盘焦点落进看不见的内容。默认折叠，展开过才挂载。
+          -->
+          <div
+            v-if="hasBody(item) && (isExpanded(item.id) || isMounted(item.id))"
+            class="vocab-body"
+            :class="{ collapsed: !isExpanded(item.id) }"
+            :inert="!isExpanded(item.id)"
+          >
+            <!--
+              释义用隔离 iframe 渲染：词典自带的 <style>/内联事件在应用源下会污染整个
+              界面、并让第三方词典脚本够到 localStorage 里的 token。
+              这里取的是**收藏当时的释义快照**（/vocab/{id}/entry），不是按词典实时取，
+              所以词典后来被删或改都不影响生词本。
+            -->
+            <EntryFrame
+              v-if="item.definition"
+              :key="item.id"
+              class="definition"
+              :loader="() => getVocabEntryHtml(item.id)"
+            />
+            <p v-if="item.note" class="note">备注：{{ item.note }}</p>
+          </div>
         </div>
       </div>
 
@@ -297,28 +307,23 @@ async function remove(item: VocabItem) {
   column-gap: var(--space-3);
 }
 
+/*
+ * 普通块级容器，**不是** flex 行。
+ *
+ * 早先这里是 flex 行，右侧那个「删除」按钮于是长成一列、贯穿整张卡片的高度：折叠时
+ * 看不出来，词条一展开右边就永远空掉 38px 按钮 + 16px 间距，正文被挤窄（用户实测
+ * 展开千篇那条就是这样）。按钮搬进标题行之后，卡片不再需要分列，改回块级最省事——
+ * 顺带也把当初「释义只占一半宽度」的成因一并消掉了（那个 bug 是 .vocab-main 作为
+ * flex item 时按内容撑宽、而内部 width:100% 的 iframe 按替换元素默认值 300px 参与计算
+ * 造成的；块级布局下子元素自然占满整宽，不会再犯）。
+ */
 .vocab-item {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
   background: var(--color-bg-surface);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-elevation-1);
   /* 竖向内边距 × 0.6：16px → 9.6px（--space-4 是 16px）。
      和行高、行间距一样统一按 0.6 缩放，相邻两条标题行之间的距离才是干净的 -40% */
   padding: calc(var(--space-4) * 0.6) var(--space-4);
-}
-
-/*
- * flex: 1 是「释义只占一半宽度」的修复点：.vocab-item 是 flex 行，.vocab-main 默认
- * flex-grow:0，宽度按内容撑——而里面两个孩子都是 width:100%（百分比在固有尺寸里退化成
- * auto），iframe 就按替换元素默认的 300px 参与计算，于是只剩固定的一小条，右边留给
- * 「删除」一大片空白。min-width:0 允许它被压到 0，否则内容的最小尺寸会顶住不让收缩。
- */
-.vocab-main {
-  flex: 1;
-  min-width: 0;
 }
 
 .word-row {
@@ -412,6 +417,10 @@ async function remove(item: VocabItem) {
 }
 
 .remove-btn {
+  /* 推到标题行最右边。align-self 把它从基线对齐里摘出来，否则这个 13px 小字会改变
+     整行的行盒高度，前面按 -40% 调好的行距会跟着漂 */
+  margin-left: auto;
+  align-self: center;
   flex-shrink: 0;
   border: none;
   background: none;
