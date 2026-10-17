@@ -61,3 +61,6 @@ result*
 .claude/settings.local.json
 
 .gradle
+
+# 安全扫描产物（本地审计缓存，不入库）
+.codebuddy/
